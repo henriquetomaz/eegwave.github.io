@@ -1,0 +1,267 @@
+% ##############################################################################################
+function [powermax1,powermax2,newA,newB]=freqpeaks(TF1,TF2,freqVec,Fs,n,dir);
+% function [powermax1,powermax2,newA,newB]=freqpeaks(TF1,TF2,freqVec,Fs,n,dir);
+% ##############################################################################################
+
+freqVecT=freqVec';
+fo=freqVec(1);
+ff=freqVec(end);
+deltaF=freqVec(2)-freqVec(1);
+for i=1:n
+  cumFreq1{1,i}=sum(TF1{1,i},2);
+  cumFreq2{1,i}=sum(TF2{1,i},2);
+end
+   
+%################################################################## 
+% cumFreq1= celula contendo a frequencia acumulada do canal 1 (Ch1:
+% hipocampo) de cada arquivo analisado (n arquivos).
+
+DERIV1=cell(1,n);
+DERIV2=cell(1,n);
+
+powermax1=cell(1,n);
+powermax2=cell(1,n);
+
+for i=1:n 
+[FITTEDMODEL,goodness]=FIT(freqVecT,cumFreq1{1,i},'smoothingspline');
+[DER1,DER2]=DIFFERENTIATE(FITTEDMODEL,freqVecT);
+DERIV1{1,i}=DER1;
+DERIV2{1,i}=DER2;
+k=0;
+mc=max(cumFreq1{1,i});
+  for j=2:length(freqVec)
+     if (DERIV1{1,i}(j-1)>0 | DERIV1{1,i}(j-1)<0.005*mc)&(DERIV1{1,i}(j)<0 | DERIV1{1,i}(j)<(0.25*mc))
+       if DERIV2{1,i}(j)<(0.005*min(DERIV2{1,i}))
+        k=k+1; 
+        ipeak=fo+((j-1)*deltaF);
+        powermax1{1,i}(k,1)=ipeak;
+        powermax1{1,i}(k,2)=cumFreq1{1,i}(j);
+       end 
+     end
+  end   
+% powermax1  
+% figure;
+% plot(freqVec,cumFreq1{1,i},'b',freqVec,DERIV1{1,i},'m',freqVec,DERIV2{1,i},'g',freqVec,0.0,'--');
+end
+
+% %################################################################## 
+% % cumFreq2= celula contendo a frequencia acumulada do canal 2 (Ch2:
+% % hipocampo) de cada arquivo analisado (n arquivos).
+% 
+for i=1:n 
+[FITTEDMODEL,goodness]=FIT(freqVecT,cumFreq2{1,i},'smoothingspline');
+[DER1,DER2]=DIFFERENTIATE(FITTEDMODEL,freqVecT);
+DERIV1{1,i}=DER1;
+DERIV2{1,i}=DER2;
+k=0;
+mc=max(cumFreq2{1,i});
+  for j=2:length(freqVec)
+     if (DERIV1{1,i}(j-1)>0 | DERIV1{1,i}(j-1)<0.005*mc)&(DERIV1{1,i}(j)<0 | DERIV1{1,i}(j)<(0.25*mc))
+       if DERIV2{1,i}(j)<(0.005*min(DERIV2{1,i}))
+        k=k+1; 
+        ipeak=fo+((j-1)*deltaF);
+        powermax2{1,i}(k,1)=ipeak;
+        powermax2{1,i}(k,2)=cumFreq2{1,i}(j);
+       end 
+     end
+  end   
+% powermax2  
+% figure;
+% plot(freqVec,cumFreq2{1,i},'b',freqVec,DERIV1{1,i},'m',freqVec,DERIV2{1,i},'g',freqVec,0.0,'--');
+end
+
+
+% ##############################################################################################
+
+
+% %  Grava arquivo contendo os picos de Frequencia e suas potencias em cada canal de EEG analisado 
+% 
+%    file_path=[dir 'Freqs-Ch1.txt'];
+%    fid = fopen(file_path,'wt');
+%    fprintf(fid,'%s\t %s\t %s\n\n','File','Fmax(Hz)','Intensidade(uV2/Hz)'); 
+%    for k=1:n
+%      for i=1:size(powermax1{1,k},1)
+%       fprintf(fid,'%1.0f\t %2.2f\t\t %12.1f\n',k,powermax1{1,k}(i,1),powermax1{1,k}(i,2));
+%       fprintf(fid,'\n');
+%      end
+%    end 
+%     fclose(fid);
+%     
+%    file_path=[dir 'Freqs-Ch2.txt'];
+%    fid = fopen(file_path,'wt');
+%    fprintf(fid,'%s\t %s\t %s\n\n','File','Fmax(Hz)','Intensidade(uV2/Hz)'); 
+%    for k=1:n
+%      for i=1:size(powermax2{1,k},1)
+%       fprintf(fid,'%1.0f\t %2.2f\t\t %12.1f\n',k,powermax2{1,k}(i,1),powermax2{1,k}(i,2));
+%       fprintf(fid,'\n');
+%      end
+%    end 
+%     fclose(fid); 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+[A,newA,B,newB]=cleanfreqs_mod(n,dir,powermax1,powermax2);
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% ##############################################################################################
+function [A,newA,B,newB]=cleanfreqs_mod(n,dir,M1,M2);
+% function [A,newA,B,newB]=cleanfreqs_mod(n,dir,M1,M2);
+% Retira os picos redundantes da funcao freqpeaks e produz arquivo de
+% saida.
+% Funcao original = cleanfreqs.m ou cleanfreqs_mod.m
+% ##############################################################################################
+% CHANNEL 1
+
+A=cell(1,n);
+for k=1:n    
+s=size(M1{1,k},1);
+g=0;
+h=0;
+C=0;
+for i=2:s
+if C==0 & abs(M1{1,k}(i-1,1)-M1{1,k}(i,1)) > 0.2
+    g=g+1;
+    A{1,k}(g,1)=M1{1,k}(i-1,1);
+    A{1,k}(g,2)=M1{1,k}(i-1,2);
+    A{1,k}(g+1,1)=M1{1,k}(i,1);
+    A{1,k}(g+1,2)=M1{1,k}(i,2);
+    C=C+1;
+    h=0;
+elseif C==0 & abs(M1{1,k}(i-1-h,1)-M1{1,k}(i,1)) <= 0.2*(h+1)
+    if M1{1,k}(i-1-h,2) >= M1{1,k}(i,2)
+       A{1,k}(g+1,1)=M1{1,k}(i-1-h,1);
+       A{1,k}(g+1,2)=M1{1,k}(i-1-h,2);
+       C=C+1;
+       h=h+1;
+	elseif M1{1,k}(i-1-h,2) < M1{1,k}(i,2)
+       A{1,k}(g+1,1)=M1{1,k}(i,1);
+       A{1,k}(g+1,2)=M1{1,k}(i,2);
+       C=C+1;
+       h=h+1;
+    end
+elseif C~=0 & abs(M1{1,k}(i-1-h,1)-M1{1,k}(i,1)) > 0.22*(h+1)
+    g=g+1;
+    A{1,k}(g+1,1)=M1{1,k}(i,1);
+    A{1,k}(g+1,2)=M1{1,k}(i,2);
+    h=0;
+elseif C~=0 & abs(M1{1,k}(i-1-h,1)-M1{1,k}(i,1)) <= 0.22*(h+1)
+    if M1{1,k}(i,2) >= A{1,k}(g+1,2)
+       A{1,k}(g+1,1)=M1{1,k}(i,1);
+       A{1,k}(g+1,2)=M1{1,k}(i,2);
+       C=C+1;
+       h=h+1;
+   elseif M1{1,k}(i,2) < A{1,k}(g+1,2)
+       A{1,k}(g+1,1)=A{1,k}(g+1,1);
+       A{1,k}(g+1,2)=A{1,k}(g+1,2);
+       C=C+1;
+       h=h+1;
+   end
+end
+end
+end
+newA=cell(1,n);
+for i=1:n
+    nzeros=size(A{1,i},1)-length(find(A{1,i}(:,1)));
+    length_newA(1,i)=length(find(A{1,i}(:,2)));
+     for j=1:length_newA(1,i)
+        for k=1:2 
+          if A{1,i}(j,2)~=0
+             newA{1,i}(j,k)=A{1,i}(j,k);
+          end
+        end
+     end
+end
+
+% ##############################################################################################
+% CHANNEL 2
+
+B=cell(1,n);
+for k=1:n    
+s=size(M2{1,k},1);
+g=0;
+h=0;
+C=0;
+for i=2:s
+if C==0 & abs(M2{1,k}(i-1,1)-M2{1,k}(i,1)) > 0.2
+    g=g+1;
+    B{1,k}(g,1)=M2{1,k}(i-1,1);
+    B{1,k}(g,2)=M2{1,k}(i-1,2);
+    B{1,k}(g+1,1)=M2{1,k}(i,1);
+    B{1,k}(g+1,2)=M2{1,k}(i,2);
+    C=C+1;
+    h=0;
+elseif C==0 & abs(M2{1,k}(i-1-h,1)-M2{1,k}(i,1)) <= 0.2*(h+1)
+    if M2{1,k}(i-1-h,2) >= M2{1,k}(i,2)
+       B{1,k}(g+1,1)=M2{1,k}(i-1-h,1);
+       B{1,k}(g+1,2)=M2{1,k}(i-1-h,2);
+       C=C+1;
+       h=h+1;
+	elseif M2{1,k}(i-1-h,2) < M2{1,k}(i,2)
+       B{1,k}(g+1,1)=M2{1,k}(i,1);
+       B{1,k}(g+1,2)=M2{1,k}(i,2);
+       C=C+1;
+       h=h+1;
+    end
+elseif C~=0 & abs(M2{1,k}(i-1-h,1)-M2{1,k}(i,1)) > 0.22*(h+1)
+    g=g+1;
+    B{1,k}(g+1,1)=M2{1,k}(i,1);
+    B{1,k}(g+1,2)=M2{1,k}(i,2);
+    h=0;
+elseif C~=0 & abs(M2{1,k}(i-1-h,1)-M2{1,k}(i,1)) <= 0.22*(h+1)
+    if M2{1,k}(i,2) >= B{1,k}(g+1,2)
+       B{1,k}(g+1,1)=M2{1,k}(i,1);
+       B{1,k}(g+1,2)=M2{1,k}(i,2);
+       C=C+1;
+       h=h+1;
+   elseif M2{1,k}(i,2) < B{1,k}(g+1,2)
+       B{1,k}(g+1,1)=B{1,k}(g+1,1);
+       B{1,k}(g+1,2)=B{1,k}(g+1,2);
+       C=C+1;
+       h=h+1;
+   end
+end
+end
+end
+newB=cell(1,n);
+for i=1:n
+    nzeros=size(B{1,i},1)-length(find(B{1,i}(:,1)));
+    length_newB(1,i)=length(find(B{1,i}(:,2)));
+     for j=1:length_newB(1,i)
+        for k=1:2 
+          if B{1,i}(j,2)~=0
+             newB{1,i}(j,k)=B{1,i}(j,k);
+          end
+        end
+     end
+end
+
+
+% ##############################################################################################
+
+
+%  Grava arquivo contendo os picos de Frequencia e suas potencias em cada canal de EEG analisado 
+
+   file_path=[dir 'Freqs-Ch1.txt'];
+   fid = fopen(file_path,'wt');
+   fprintf(fid,'%s\t %s\t %s\n\n','Epoca','Fmax(Hz)','Intensidade(uV2/Hz)'); 
+   for k=1:n
+     for i=1:size(newA{1,k},1)
+      fprintf(fid,'%1.0f\t %2.2f\t\t %12.1f\n',k,newA{1,k}(i,1),newA{1,k}(i,2));
+      fprintf(fid,'\n');
+     end
+   end 
+    fclose(fid);
+    
+   file_path=[dir 'Freqs-Ch2.txt'];
+   fid = fopen(file_path,'wt');
+   fprintf(fid,'%s\t %s\t %s\n\n','Epoca','Fmax(Hz)','Intensidade(uV2/Hz)'); 
+   for k=1:n
+     for i=1:size(newB{1,k},1)
+      fprintf(fid,'%1.0f\t %2.2f\t\t %12.1f\n',k,newB{1,k}(i,1),newB{1,k}(i,2));
+      fprintf(fid,'\n');
+     end
+   end 
+    fclose(fid); 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
